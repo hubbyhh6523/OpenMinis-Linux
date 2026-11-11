@@ -3,6 +3,11 @@ name: Native dependencies
 on:
   workflow_call:
   workflow_dispatch:
+  # TEMPORARY: auto-run on this branch while verifying the Magpie build.
+  # Remove before merging to main.
+  push:
+    branches: [feat/magpie-gateway]
+    paths: [".github/workflows/native-deps.yml"]
 
 permissions:
   contents: read
