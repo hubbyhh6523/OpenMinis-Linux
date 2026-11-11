@@ -10,6 +10,7 @@ import com.openminis.app.network.ConnectionWarmup
 import com.openminis.app.provider.anthropic.AnthropicProvider
 import com.openminis.app.provider.gemini.GeminiProvider
 import com.openminis.app.provider.openai.OpenAIProvider
+import com.openminis.app.sandbox.MagpieGateway
 
 object ProviderFactory {
     /**
@@ -203,8 +204,15 @@ object ProviderFactory {
                     // base URL). The user can flip `useResponsesAPI` on a
                     // per-instance basis when the backend only speaks
                     // /v1/responses.
-                    val base = basePath ?: "https://api.openai.com/v1"
-                    val effectiveKey = if (!manualBearer.isNullOrEmpty()) manualBearer else apiKey
+                    // [T-magpie-gateway] When the local Magpie gateway is
+                    // running, route OpenAI-family requests through it instead
+                    // of the upstream API. Magpie speaks standard Chat
+                    // Completions, so only baseURL and key need overriding;
+                    // Azure/Responses flags stay untouched.
+                    val base = if (MagpieGateway.isRunning()) MagpieGateway.BASE_URL
+                               else basePath ?: "https://api.openai.com/v1"
+                    val effectiveKey = if (MagpieGateway.isRunning()) MagpieGateway.API_KEY
+                                       else if (!manualBearer.isNullOrEmpty()) manualBearer else apiKey
                     OpenAIProvider(
                         apiKey = effectiveKey,
                         model = model,
