@@ -18,6 +18,9 @@ env:
   GO_VERSION: "1.26.8"
   GO_SHA256: "d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
   GOMOBILE_VERSION: "v0.0.0-20260908204917-8b95e45f8d3e"
+  # Magpie LLM gateway (github.com/yetone/magpie, MIT). Pinned tag; its go.mod
+  # requires go 1.26.8, same as GO_VERSION above.
+  MAGPIE_REF: "v0.1.3778"
 
 jobs:
   build-native-deps:
@@ -158,6 +161,27 @@ jobs:
           retry gomobile init
           retry bash deps/build_rclone_android.sh
 
+      # Magpie is pure Go with the `nogui` tag (no GTK/Wails/cgo), so it
+      # cross-compiles to linux/arm64 on the x86 runner. Same recipe as
+      # magpie's own `make release-cli` and Dockerfile.
+      - name: Build Magpie gateway (linux/arm64, nogui)
+        env:
+          GOTOOLCHAIN: local
+          GOPROXY: "https://proxy.golang.org,direct"
+          GODEBUG: "http2client=0"
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/go/bin:${PATH}"
+          go version | grep -F "go${GO_VERSION}"
+          git clone --depth 1 --branch "${MAGPIE_REF}" https://github.com/yetone/magpie.git "${RUNNER_TEMP}/magpie"
+          cd "${RUNNER_TEMP}/magpie"
+          go run ./build/assetpack internal/gui/assets internal/gui/assets.zip
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags "nogui packedassets" \
+            -trimpath -ldflags "-s -w -X main.version=${MAGPIE_REF}" \
+            -o "${GITHUB_WORKSPACE}/magpie-linux-arm64" .
+          file "${GITHUB_WORKSPACE}/magpie-linux-arm64" | grep -F "ARM aarch64"
+          test -s "${GITHUB_WORKSPACE}/magpie-linux-arm64"
+
       - name: Restore LLVM libunwind sources
         uses: actions/cache@v4
         with:
@@ -179,8 +203,10 @@ jobs:
           cp src/android/app/src/main/assets/proot-aarch64 native-artifacts/assets/
           cp src/android/app/src/main/jniLibs/arm64-v8a/libproot.so native-artifacts/jniLibs/arm64-v8a/
           cp deps/build/rclone/rclone.aar native-artifacts/libs/
+          cp magpie-linux-arm64 native-artifacts/assets/
           find /usr/local/lib/android/sdk/ndk/${ANDROID_NDK}/toolchains/llvm/prebuilt -path '*sysroot/usr/lib/aarch64-linux-android/libunwind.a' -print -quit | xargs -I{} cp {} native-artifacts/libunwind.a
           test -s native-artifacts/libunwind.a
+          test -s native-artifacts/assets/magpie-linux-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: native-deps-${{ github.sha }}
