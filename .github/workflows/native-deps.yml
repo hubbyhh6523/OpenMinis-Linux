@@ -78,6 +78,7 @@ jobs:
             android-sdk-${{ runner.os }}-ndk-${{ env.ANDROID_NDK }}-
 
       - name: Install build tools and Android NDK
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           ts() { echo "[$(date -u +%H:%M:%S)] $*"; }
@@ -99,19 +100,36 @@ jobs:
               delay=$((delay * 2))
             done
           }
-          # The runner's default apt mirror (azure.archive.ubuntu.com) has been
-          # failing DNS resolution here ("Temporary failure resolving", exit 100).
-          # When it does not resolve, point apt at archive.ubuntu.com instead.
-          if ! getent hosts azure.archive.ubuntu.com >/dev/null 2>&1; then
-            ts "azure.archive.ubuntu.com does not resolve; using archive.ubuntu.com"
-            printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          # GitHub-hosted ubuntu runners already ship these tools. Only touch apt
+          # when something is actually missing, so a flaky runner DNS/mirror does
+          # not fail the whole job.
+          NEEDED="curl unzip make gawk sed file python3 cmake ninja g++ git"
+          missing_tools() {
+            local m=""
+            for t in $NEEDED; do
+              command -v "$t" >/dev/null 2>&1 || m="$m $t"
+            done
+            echo "$m"
+          }
+          MISSING="$(missing_tools)"
+          if [ -z "${MISSING// /}" ]; then
+            ts "all build tools already present; skipping apt"
+          else
+            ts "missing tools:${MISSING}; installing via apt"
+            if ! getent hosts azure.archive.ubuntu.com >/dev/null 2>&1; then
+              ts "azure.archive.ubuntu.com does not resolve; using archive.ubuntu.com"
+              printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            fi
+            APT_OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10"
+            retry sudo apt-get $APT_OPTS update || ts "apt-get update failed; continuing"
+            retry sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y --fix-missing curl unzip make gawk sed file python3 cmake ninja-build g++ git || ts "apt-get install failed; checking tools"
+            MISSING="$(missing_tools)"
+            if [ -n "${MISSING// /}" ]; then
+              echo "still missing required tools:${MISSING}" >&2
+              exit 1
+            fi
           fi
-          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
-          ts "apt-get update"
-          retry sudo apt-get $APT_OPTS update
-          ts "apt-get install"
-          retry sudo DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y --fix-missing curl unzip make gawk sed file python3 cmake ninja-build g++ git
-          ts "apt done"
+          ts "apt step done"
           mkdir -p /usr/local/lib/android/sdk/cmdline-tools
           if [ ! -x /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager ]; then
             curl -fsSL -o /tmp/cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-${{ env.ANDROID_CMDLINE_TOOLS }}_latest.zip
