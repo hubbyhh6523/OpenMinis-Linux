@@ -31,9 +31,11 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            ./gradlew :app:assembleRelease || true
-            APK=$(find app/build/outputs/apk -name '*.apk' | head -n1)
+            cd src/android
+            ./gradlew :app:assembleRelease --parallel --stacktrace
+            APK=app/build/outputs/apk/release/app-release.apk
             echo "APK=$APK"
+            test -s "$APK" || { echo "APK not found at $APK"; exit 1; }
             adb install -r "$APK"
             adb shell am start -n com.openminis.linux/.MainActivity
             sleep 30
