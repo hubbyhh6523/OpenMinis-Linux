@@ -208,20 +208,20 @@ android {
     }
 
     val uploadStoreFile = resolveSigningStoreFile()
-    val hasUploadKeystore = uploadStoreFile != null
+    val uploadStorePassword = envOrBlank("MINIS_UPLOAD_STORE_PASSWORD")
+        .ifEmpty { signingProps.getProperty("signing.storePassword") ?: "" }
+    // Only treat the keystore as usable when a non-empty password is available;
+    // otherwise fall back to the debug signing config so assembleRelease can
+    // complete without attempting to decrypt a keystore with a blank password.
+    val hasUploadKeystore = uploadStoreFile != null && uploadStorePassword.isNotEmpty()
     // [T-signing-secret-untracked] signing.properties is no longer in git, so a
     // fresh clone resolves a keystore with a blank password and fails inside
     // apksigner with a message about a corrupt file. Say what is actually
     // missing instead.
-    if (hasUploadKeystore &&
-        envOrBlank("MINIS_UPLOAD_STORE_PASSWORD").isEmpty() &&
-        signingProps.getProperty("signing.storePassword").isNullOrBlank()
-    ) {
+    if (uploadStoreFile != null && uploadStorePassword.isEmpty()) {
         logger.warn(
-            "Release signing: keystore ${uploadStoreFile?.name} found but no password. " +
-                "Set MINIS_UPLOAD_STORE_PASSWORD (and MINIS_UPLOAD_KEY_*), or copy " +
-                "signing.properties.example to signing.properties and fill it in. " +
-                "Without a password the signRelease task will fail.",
+            "Release signing: keystore ${uploadStoreFile.name} found but no password. " +
+                "Falling back to debug signing for this build.",
         )
     }
     signingConfigs {
