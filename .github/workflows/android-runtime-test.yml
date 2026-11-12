@@ -31,20 +31,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            bash -c '
-              cd src/android
-              ./gradlew :app:assembleRelease --parallel --stacktrace
-              APK=app/build/outputs/apk/release/app-release.apk
-              echo "APK=$APK"
-              test -s "$APK" || { echo "APK not found at $APK"; exit 1; }
-              adb install -r "$APK"
-              adb shell am start -n com.openminis.linux/.MainActivity
-              sleep 30
-              adb logcat -d | grep -Ei "magpie|3425|PRoot" > magpie-log.txt || true
-              adb forward tcp:13425 tcp:3425
-              curl -sS -m 10 http://127.0.0.1:13425/v1/models > magpie-response.txt 2>&1 || echo "magpie not responding" >> magpie-response.txt
-              cat magpie-response.txt
-            '
+            cd src/android && ./gradlew :app:assembleRelease --parallel --stacktrace && APK=app/build/outputs/apk/release/app-release.apk && test -s "$APK" && adb install -r "$APK" && adb shell am start -n com.openminis.linux/.MainActivity && sleep 30 && adb logcat -d | grep -Ei "magpie|3425|PRoot" > magpie-log.txt; adb forward tcp:13425 tcp:3425; curl -sS -m 10 http://127.0.0.1:13425/v1/models > magpie-response.txt 2>&1 || echo "magpie not responding" >> magpie-response.txt; cat magpie-response.txt
 
       - name: Upload logcat and response
         if: always()
